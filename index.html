@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>ลงเวลาทำงาน</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+  <style>
+    :root {
+      --green: #06C755; --green-dark: #05a847; --red: #e5484d; --amber: #d98b00;
+      --bg: #f3f5f7; --card: #fff; --text: #16191d; --muted: #6b7280; --line: #e5e7eb;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'Noto Sans Thai', system-ui, sans-serif; background: var(--bg); color: var(--text); font-size: 15px; }
+    main { max-width: 480px; margin: 0 auto; padding: 16px 16px calc(24px + env(safe-area-inset-bottom)); }
+    .card { background: var(--card); border-radius: 16px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 2px rgba(0,0,0,.05); }
+    .muted { color: var(--muted); font-size: 13px; }
+    .hidden { display: none !important; }
+
+    .profile { display: flex; align-items: center; gap: 12px; }
+    .profile img { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; background: var(--line); }
+    .profile .name { font-weight: 600; font-size: 17px; }
+    .clock { margin-left: auto; text-align: right; }
+    .clock .t { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+    .status { display: flex; align-items: center; gap: 10px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
+    .dot.on { background: var(--green); box-shadow: 0 0 0 4px rgba(6,199,85,.18); }
+
+    #map { height: 220px; border-radius: 12px; margin: 12px 0 10px; z-index: 0; }
+    .geo { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 13px; font-weight: 600; }
+    .badge.ok { background: #e6f9ee; color: var(--green-dark); }
+    .badge.bad { background: #fdecec; color: var(--red); }
+    .badge.wait { background: #fff4e0; color: var(--amber); }
+    .link { background: none; border: 0; color: var(--green-dark); font: inherit; font-size: 13px; padding: 4px 0; cursor: pointer; }
+
+    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+    .btn { border: 0; border-radius: 14px; padding: 18px 8px; font: inherit; font-size: 17px; font-weight: 700; cursor: pointer; color: #fff; }
+    .btn small { display: block; font-weight: 400; font-size: 12px; opacity: .9; }
+    .btn.in { background: var(--green); }
+    .btn.out { background: #1f2937; }
+    .btn:disabled { background: #cfd4da; color: #fff; cursor: not-allowed; }
+    .btn.primary { outline: 3px solid rgba(6,199,85,.35); outline-offset: 2px; }
+
+    .timeline { list-style: none; margin: 8px 0 0; padding: 0; }
+    .timeline li { display: flex; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+    .timeline li:first-child { border-top: 0; }
+    .timeline .tm { font-weight: 600; font-variant-numeric: tabular-nums; width: 52px; }
+
+    .notice { text-align: center; padding: 32px 16px; }
+    .notice h2 { margin: 8px 0; font-size: 19px; }
+    .spinner { width: 36px; height: 36px; border: 4px solid var(--line); border-top-color: var(--green); border-radius: 50%; margin: 0 auto; animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 10; }
+    .sheet { background: #fff; border-radius: 20px; padding: 24px 20px; width: 100%; max-width: 400px; text-align: center; }
+    .sheet .icon { width: 64px; height: 64px; border-radius: 50%; margin: 0 auto 8px; display: grid; place-items: center; font-size: 34px; color: #fff; }
+    .sheet .icon.ok { background: var(--green); } .sheet .icon.bad { background: var(--red); }
+    .sheet h2 { margin: 6px 0 4px; }
+    .sheet ul { text-align: left; padding-left: 20px; color: var(--red); }
+    .sheet .btn { width: 100%; margin-top: 12px; padding: 14px; font-size: 16px; }
+  </style>
+</head>
+<body>
+<main>
+  <section id="loading" class="card notice"><div class="spinner"></div><p class="muted">กำลังโหลด…</p></section>
+
+  <section id="blocked" class="card notice hidden">
+    <h2 id="blockedTitle"></h2>
+    <p id="blockedMsg" class="muted"></p>
+  </section>
+
+  <div id="app" class="hidden">
+    <section class="card profile">
+      <img id="avatar" alt="">
+      <div>
+        <div class="name" id="empName"></div>
+        <div class="muted" id="empCode"></div>
+      </div>
+      <div class="clock"><div class="t" id="clock">--:--</div><div class="muted" id="today"></div></div>
+    </section>
+
+    <section class="card status">
+      <span class="dot" id="statusDot"></span>
+      <div><div id="statusText"></div><div class="muted" id="statusSub"></div></div>
+    </section>
+
+    <section class="card">
+      <div class="geo">
+        <strong>ตำแหน่งของคุณ</strong>
+        <span class="badge wait" id="geoBadge">กำลังหาตำแหน่ง…</span>
+      </div>
+      <div id="map"></div>
+      <div class="muted" id="geoDetail">กรุณาอนุญาตให้เข้าถึงตำแหน่ง</div>
+      <button class="link" id="refreshGeo">↻ อัปเดตตำแหน่ง</button>
+    </section>
+
+    <section class="actions">
+      <button class="btn in" id="btnIn" disabled>เช็คอิน<small>เข้างาน</small></button>
+      <button class="btn out" id="btnOut" disabled>เช็คเอาท์<small>ออกงาน</small></button>
+    </section>
+
+    <section class="card">
+      <strong>รายการวันนี้</strong>
+      <ul class="timeline" id="timeline"></ul>
+    </section>
+  </div>
+</main>
+
+<div id="overlay" class="overlay hidden">
+  <div class="sheet">
+    <div class="icon" id="resIcon"></div>
+    <h2 id="resTitle"></h2>
+    <div class="muted" id="resSub"></div>
+    <ul id="resProblems"></ul>
+    <button class="btn in" id="resClose">ตกลง</button>
+  </div>
+</div>
+
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+/* ====== ตั้งค่า ====== */
+const LIFF_ID = 'YOUR_LIFF_ID';                  // จาก LINE Developers > LIFF
+const API_URL = 'YOUR_APPS_SCRIPT_WEB_APP_URL';  // URL ที่ลงท้ายด้วย /exec
+const MAX_ACCURACY_M = 100;                      // ให้ตรงกับฝั่ง Code.gs
+const MAX_FIX_AGE_MS = 30000;                    // ใช้พิกัดที่เก่าไม่เกิน 30 วินาที
+/* ===================== */
+
+const $ = (id) => document.getElementById(id);
+let state = null;       // ข้อมูลจาก server
+let pos = null;         // พิกัดล่าสุด
+let map, userMarker, accCircle, busy = false;
+let preferred = null;   // action จาก rich menu (?action=in|out)
+
+async function main() {
+  try {
+    await liff.init({ liffId: LIFF_ID });
+    if (!liff.isLoggedIn()) { liff.login({ redirectUri: location.href }); return; }
+  } catch (e) {
+    return block('เปิดแอปไม่สำเร็จ', 'LIFF init error: ' + e.message);
+  }
+  preferred = new URLSearchParams(location.search).get('action');
+  tickClock(); setInterval(tickClock, 1000);
+
+  const res = await api('status');
+  if (!res) return;
+  if (!res.employee.approved) {
+    return block('รอการอนุมัติ', `ลงทะเบียนชื่อ “${res.user.name}” แล้ว กรุณาแจ้งผู้ดูแลระบบให้อนุมัติ จากนั้นเปิดหน้านี้อีกครั้ง`);
+  }
+  state = res;
+  $('loading').classList.add('hidden');
+  $('app').classList.remove('hidden');
+  renderProfile(); renderStatus(); initMap(); startGeo();
+
+  $('btnIn').onclick = () => submit('checkin');
+  $('btnOut').onclick = () => submit('checkout');
+  $('refreshGeo').onclick = () => startGeo(true);
+  $('resClose').onclick = onCloseResult;
+}
+
+/* ---------- API ---------- */
+async function api(action, data = {}) {
+  try {
+    const r = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // เลี่ยง CORS preflight ของ Apps Script
+      body: JSON.stringify({ action, idToken: liff.getIDToken(), ...data }),
+    });
+    const res = await r.json();
+    if (!res.ok) {
+      if (res.code === 'TOKEN_INVALID' && !liff.isInClient()) { liff.logout(); liff.login({ redirectUri: location.href }); return null; }
+      if (action === 'status') block('ใช้งานไม่ได้', res.message); else showError(res.message);
+      return null;
+    }
+    return res;
+  } catch (e) {
+    if (action === 'status') block('เชื่อมต่อไม่สำเร็จ', 'กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่');
+    else showError('เชื่อมต่อไม่สำเร็จ กรุณาลองใหม่');
+    return null;
+  }
+}
+
+/* ---------- Render ---------- */
+function renderProfile() {
+  if (state.user.picture) $('avatar').src = state.user.picture; else $('avatar').classList.add('hidden');
+  $('empName').textContent = state.employee.fullName || state.user.name;
+  $('empCode').textContent = state.employee.code ? 'รหัส ' + state.employee.code : '';
+}
+
+function renderStatus() {
+  const open = state.openCheckIn;
+  $('statusDot').classList.toggle('on', !!open);
+  $('statusText').textContent = open ? 'กำลังทำงาน' : 'ยังไม่ได้เช็คอิน';
+  $('statusSub').textContent = open ? `เช็คอิน ${open.date} ${open.time} น. · ${open.site}` : 'กดเช็คอินเมื่อถึงสถานที่ทำงาน';
+
+  const tl = $('timeline');
+  tl.innerHTML = '';
+  if (!state.today.length) tl.innerHTML = '<li class="muted">ยังไม่มีรายการ</li>';
+  state.today.forEach((r) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="tm"></span><span></span>`;
+    li.children[0].textContent = r.time;
+    li.children[1].textContent = `${r.type === 'IN' ? 'เช็คอิน' : 'เช็คเอาท์'} · ${r.site} (${r.distance} ม.)`;
+    tl.appendChild(li);
+  });
+  updateButtons();
+}
+
+function updateButtons() {
+  const open = !!state.openCheckIn;
+  const ready = !!pos && !busy;
+  $('btnIn').disabled = !ready || open;
+  $('btnOut').disabled = !ready || !open;
+  $('btnIn').classList.toggle('primary', preferred === 'in' && !open);
+  $('btnOut').classList.toggle('primary', preferred === 'out' && open);
+}
+
+function tickClock() {
+  const now = new Date();
+  $('clock').textContent = now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+  $('today').textContent = now.toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
+/* ---------- Map & GPS ---------- */
+function initMap() {
+  const s0 = state.sites[0];
+  map = L.map('map', { zoomControl: false, attributionControl: true }).setView(s0 ? [s0.lat, s0.lng] : [13.7563, 100.5018], 16);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+  state.sites.forEach((s) => {
+    L.circle([s.lat, s.lng], { radius: s.radius, color: '#06C755', weight: 2, fillOpacity: 0.12 }).addTo(map).bindTooltip(s.name);
+  });
+}
+
+let watchId = null;
+function startGeo(force) {
+  if (!navigator.geolocation) return geoError({ code: 0 });
+  if (watchId !== null) { if (!force) return; navigator.geolocation.clearWatch(watchId); }
+  setBadge('wait', 'กำลังหาตำแหน่ง…');
+  watchId = navigator.geolocation.watchPosition(onPosition, geoError, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
+}
+
+function onPosition(p) {
+  pos = { lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy, time: p.timestamp || Date.now() };
+  const ll = [pos.lat, pos.lng];
+  if (!userMarker) {
+    accCircle = L.circle(ll, { radius: pos.accuracy, color: '#3b82f6', weight: 1, fillOpacity: 0.1 }).addTo(map);
+    userMarker = L.circleMarker(ll, { radius: 7, color: '#fff', weight: 2, fillColor: '#3b82f6', fillOpacity: 1 }).addTo(map);
+  } else { userMarker.setLatLng(ll); accCircle.setLatLng(ll).setRadius(pos.accuracy); }
+
+  const near = nearestSite();
+  map.invalidateSize();
+  if (near) map.fitBounds(L.latLngBounds([ll, [near.lat, near.lng]]).pad(0.4), { maxZoom: 17 });
+  else map.setView(ll, 17);
+
+  const acc = Math.round(pos.accuracy);
+  if (!near) setBadge('bad', 'ไม่มีสถานที่ทำงาน');
+  else if (pos.accuracy > MAX_ACCURACY_M) setBadge('bad', 'GPS ไม่แม่นยำ');
+  else if (near.distance <= near.radius) setBadge('ok', 'อยู่ในพื้นที่');
+  else setBadge('bad', 'อยู่นอกพื้นที่');
+  $('geoDetail').textContent = near
+    ? `ห่างจาก ${near.name} ${fmtDist(near.distance)} (รัศมี ${near.radius} ม.) · ความแม่นยำ ±${acc} ม.`
+    : `ความแม่นยำ ±${acc} ม.`;
+  updateButtons();
+}
+
+function geoError(err) {
+  const msg = {
+    1: 'ไม่ได้รับอนุญาตให้เข้าถึงตำแหน่ง — เปิดสิทธิ์ Location ให้แอป LINE ในการตั้งค่าโทรศัพท์ แล้วลองใหม่',
+    2: 'หาตำแหน่งไม่ได้ — ตรวจสอบว่าเปิด GPS แล้ว',
+    3: 'หาตำแหน่งนานเกินไป — ลองออกไปที่โล่งแล้วกดอัปเดตตำแหน่ง',
+  }[err.code] || 'อุปกรณ์นี้ไม่รองรับการระบุตำแหน่ง';
+  if (!pos) { setBadge('bad', 'ไม่พบตำแหน่ง'); $('geoDetail').textContent = msg; }
+  updateButtons();
+}
+
+function nearestSite() {
+  if (!pos) return null;
+  return state.sites
+    .map((s) => ({ ...s, distance: haversine(pos.lat, pos.lng, s.lat, s.lng) }))
+    .sort((a, b) => a.distance - b.distance)[0] || null;
+}
+
+function freshPosition() {
+  if (pos && Date.now() - pos.time < MAX_FIX_AGE_MS) return Promise.resolve(pos);
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition((p) => { onPosition(p); resolve(pos); }, reject,
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 });
+  });
+}
+
+/* ---------- Submit ---------- */
+async function submit(action) {
+  if (busy) return;
+  busy = true; updateButtons();
+  const btn = action === 'checkin' ? $('btnIn') : $('btnOut');
+  const label = btn.innerHTML;
+  btn.innerHTML = 'กำลังบันทึก…';
+  try {
+    let p;
+    try { p = await freshPosition(); } catch (e) { geoError(e); showError('ไม่สามารถอ่านตำแหน่งปัจจุบันได้'); return; }
+    const res = await api(action, { lat: p.lat, lng: p.lng, accuracy: p.accuracy, posTime: p.time });
+    if (!res) return;
+    showResult(res);
+    const st = await api('status');
+    if (st) { state = st; renderStatus(); }
+  } finally {
+    btn.innerHTML = label;
+    busy = false; updateButtons();
+  }
+}
+
+let lastResult = null;
+function showResult(r) {
+  lastResult = r;
+  const what = r.type === 'IN' ? 'เช็คอิน' : 'เช็คเอาท์';
+  $('resIcon').className = 'icon ' + (r.passed ? 'ok' : 'bad');
+  $('resIcon').textContent = r.passed ? '✓' : '✕';
+  $('resTitle').textContent = r.passed ? `${what}สำเร็จ` : `${what}ไม่สำเร็จ`;
+  $('resSub').textContent = r.passed
+    ? `${r.time} น. · ${r.site} (ห่าง ${r.distance} ม.)` + (r.hours !== '' ? ` · ทำงาน ${fmtHours(r.hours)}` : '')
+    : 'ระบบบันทึกความพยายามครั้งนี้ไว้แล้ว';
+  const ul = $('resProblems'); ul.innerHTML = '';
+  (r.problems || []).forEach((t) => { const li = document.createElement('li'); li.textContent = t; ul.appendChild(li); });
+  $('resClose').textContent = r.passed && liff.isInClient() ? 'ตกลงและปิด' : 'ตกลง';
+  $('overlay').classList.remove('hidden');
+}
+
+function showError(message) {
+  lastResult = null;
+  $('resIcon').className = 'icon bad'; $('resIcon').textContent = '!';
+  $('resTitle').textContent = 'ทำรายการไม่ได้';
+  $('resSub').textContent = message;
+  $('resProblems').innerHTML = '';
+  $('resClose').textContent = 'ตกลง';
+  $('overlay').classList.remove('hidden');
+}
+
+async function onCloseResult() {
+  $('overlay').classList.add('hidden');
+  const r = lastResult;
+  if (!r || !r.passed || !liff.isInClient()) return;
+  // ส่งข้อความยืนยันเข้าห้องแชท OA (ต้องเปิด scope chat_message.write)
+  const what = r.type === 'IN' ? '✅ เช็คอิน' : '🏁 เช็คเอาท์';
+  const text = `${what} ${r.date} ${r.time} น.\n📍 ${r.site} (ห่าง ${r.distance} ม. ±${r.accuracy} ม.)`
+    + (r.hours !== '' ? `\n⏱ ทำงาน ${fmtHours(r.hours)}` : '');
+  try { await liff.sendMessages([{ type: 'text', text }]); } catch (e) { /* ไม่มีสิทธิ์ส่งข้อความ ไม่เป็นไร */ }
+  liff.closeWindow();
+}
+
+/* ---------- Utils ---------- */
+function block(title, msg) {
+  $('loading').classList.add('hidden'); $('app').classList.add('hidden');
+  $('blocked').classList.remove('hidden');
+  $('blockedTitle').textContent = title; $('blockedMsg').textContent = msg;
+}
+function setBadge(kind, text) { const b = $('geoBadge'); b.className = 'badge ' + kind; b.textContent = text; }
+function fmtDist(m) { return m >= 1000 ? (m / 1000).toFixed(1) + ' กม.' : Math.round(m) + ' ม.'; }
+function fmtHours(h) { const m = Math.round(h * 60); return `${Math.floor(m / 60)} ชม. ${m % 60} นาที`; }
+function haversine(lat1, lng1, lat2, lng2) {
+  const R = 6371000, rad = Math.PI / 180;
+  const a = Math.sin((lat2 - lat1) * rad / 2) ** 2 +
+    Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin((lng2 - lng1) * rad / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+main();
+</script>
+</body>
+</html>
