@@ -191,7 +191,8 @@
 <script>
 /* ====== ตั้งค่า (แก้ 2 บรรทัดนี้ให้ตรงกับ OA นี้) ====== */
 const LIFF_ID = '2011790972-PwM6JkaT';         // LIFF ID ของ MINI App ของ OA นี้
-const API_URL = 'https://script.google.com/macros/s/AKfycbyTjfUWWNS-_iV4bI2jSJfwTbAD9jn7z3ni3EKA19YSyWzWk01XNaja1IovAY9QWGw5/exec';         // URL Web App ของ Apps Script ของ OA นี้ (ลงท้าย /exec)
+const API_URL = '
+https://script.google.com/macros/s/AKfycbyTjfUWWNS-_iV4bI2jSJfwTbAD9jn7z3ni3EKA19YSyWzWk01XNaja1IovAY9QWGw5/exec';         // URL Web App ของ Apps Script ของ OA นี้ (ลงท้าย /exec)
 /* ===================================================== */
 const MAX_ACCURACY_M = 100;
 const MAX_FIX_AGE_MS = 30000;
@@ -220,7 +221,10 @@ async function main() {
   state = res;
   $('loading').classList.add('hidden');
   $('app').classList.remove('hidden');
-  renderProfile(); renderStatus(); initMap(); startGeo();
+  renderProfile(); renderStatus();
+  try { initMap(); } catch (e) { dbg('map error: ' + e.message); }
+  startGeo();
+  dbgPermission();
 
   $('btnIn').onclick = () => submit('checkin');
   $('btnOut').onclick = () => submit('checkout');
@@ -356,11 +360,32 @@ function tickClock() {
 }
 
 /* ---------- Map & GPS ---------- */
+function dbg(t) {
+  let el = $('dbg');
+  if (!el) {
+    el = document.createElement('div'); el.id = 'dbg';
+    el.style.cssText = 'font-size:11px;color:#888;margin-top:6px;word-break:break-all';
+    $('geoDetail').insertAdjacentElement('afterend', el);
+  }
+  el.textContent += (el.textContent ? ' | ' : '') + t;
+}
+function dbgPermission() {
+  dbg('sites=' + (state.sites ? state.sites.length : 'none') + ' leaflet=' + (window.L ? 'ok' : 'no') + ' geo=' + (navigator.geolocation ? 'yes' : 'no'));
+  try { navigator.permissions.query({ name: 'geolocation' }).then((r) => dbg('perm=' + r.state)).catch(() => {}); } catch (e) {}
+  // ถ้า 8 วินาทีแล้วยังเงียบ ลองขอตำแหน่งแบบครั้งเดียวอีกวิธี
+  setTimeout(() => {
+    if (pos) return;
+    dbg('no fix after 8s, trying getCurrentPosition');
+    navigator.geolocation.getCurrentPosition(onPosition, (e) => { dbg('gcp error ' + e.code + ' ' + e.message); geoError(e); },
+      { enableHighAccuracy: false, maximumAge: 60000, timeout: 15000 });
+  }, 8000);
+}
+
 function initMap() {
-  const s0 = state.sites[0];
+  const s0 = (state.sites || [])[0];
   map = L.map('map', { zoomControl: false, attributionControl: true }).setView(s0 ? [s0.lat, s0.lng] : [13.7563, 100.5018], 16);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
-  state.sites.forEach((s) => {
+  (state.sites || []).forEach((s) => {
     L.circle([s.lat, s.lng], { radius: s.radius, color: '#06C755', weight: 2, fillOpacity: 0.12 }).addTo(map).bindTooltip(s.name);
   });
 }
@@ -376,15 +401,18 @@ function startGeo(force) {
 function onPosition(p) {
   pos = { lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy, time: p.timestamp || Date.now() };
   const ll = [pos.lat, pos.lng];
-  if (!userMarker) {
-    accCircle = L.circle(ll, { radius: pos.accuracy, color: '#3b82f6', weight: 1, fillOpacity: 0.1 }).addTo(map);
-    userMarker = L.circleMarker(ll, { radius: 7, color: '#fff', weight: 2, fillColor: '#3b82f6', fillOpacity: 1 }).addTo(map);
-  } else { userMarker.setLatLng(ll); accCircle.setLatLng(ll).setRadius(pos.accuracy); }
-
   const near = nearestSite();
-  map.invalidateSize();
-  if (near) map.fitBounds(L.latLngBounds([ll, [near.lat, near.lng]]).pad(0.4), { maxZoom: 17 });
-  else map.setView(ll, 17);
+  if (map) {
+    try {
+      if (!userMarker) {
+        accCircle = L.circle(ll, { radius: pos.accuracy, color: '#3b82f6', weight: 1, fillOpacity: 0.1 }).addTo(map);
+        userMarker = L.circleMarker(ll, { radius: 7, color: '#fff', weight: 2, fillColor: '#3b82f6', fillOpacity: 1 }).addTo(map);
+      } else { userMarker.setLatLng(ll); accCircle.setLatLng(ll).setRadius(pos.accuracy); }
+      map.invalidateSize();
+      if (near) map.fitBounds(L.latLngBounds([ll, [near.lat, near.lng]]).pad(0.4), { maxZoom: 17 });
+      else map.setView(ll, 17);
+    } catch (e) { dbg('map draw error: ' + e.message); }
+  }
 
   const acc = Math.round(pos.accuracy);
   if (!near) setBadge('bad', 'ไม่มีสถานที่ทำงาน');
@@ -409,7 +437,7 @@ function geoError(err) {
 
 function nearestSite() {
   if (!pos) return null;
-  return state.sites
+  return (state.sites || [])
     .map((s) => ({ ...s, distance: haversine(pos.lat, pos.lng, s.lat, s.lng) }))
     .sort((a, b) => a.distance - b.distance)[0] || null;
 }
