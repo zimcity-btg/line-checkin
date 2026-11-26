@@ -220,11 +220,12 @@ async function main() {
     return block('รอการอนุมัติ', `ลงทะเบียนชื่อ “${res.user.name}” แล้ว กรุณาแจ้งผู้ดูแลระบบให้อนุมัติ จากนั้นเปิดหน้านี้อีกครั้ง`);
   }
   state = res;
+  state.config = Object.assign({ fields: { IN: [], OUT: [] }, vehicles: [], requisition: false }, state.config || {});
   $('loading').classList.add('hidden');
   $('app').classList.remove('hidden');
   renderProfile(); renderStatus();
   try { initMap(); } catch (e) { dbg('map error: ' + e.message); }
-  dbg('v1126c'); dbgPermission();
+  dbg('v1126d'); dbgPermission();
   try { startGeo(); } catch (e) { dbg('startGeo error: ' + e.name + ' ' + e.message); }
 
   $('btnIn').onclick = () => submit('checkin');
@@ -298,7 +299,7 @@ function renderStatus() {
 /** ช่องกรอกข้อมูลเพิ่มเติม สำหรับปุ่มถัดไป (เช็คอิน หรือ เช็คเอาท์) */
 function renderFields() {
   const next = state.openCheckIn ? 'OUT' : 'IN';
-  const list = (state.config.fields && state.config.fields[next]) || [];
+  const list = (state.config && state.config.fields && state.config.fields[next]) || [];
   const box = $('fields');
   box.innerHTML = '';
   $('fieldsCard').classList.toggle('hidden', !list.length);
@@ -333,7 +334,7 @@ function renderFields() {
 
 function fieldValues() {
   const next = state.openCheckIn ? 'OUT' : 'IN';
-  const list = (state.config.fields && state.config.fields[next]) || [];
+  const list = (state.config && state.config.fields && state.config.fields[next]) || [];
   const out = {};
   let ok = true;
   list.forEach((f) => {
