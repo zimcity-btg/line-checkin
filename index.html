@@ -193,6 +193,8 @@
 const LIFF_ID = '2011790972-PwM6JkaT';         // LIFF ID ของ MINI App ของ OA นี้
 const API_URL = 'https://script.google.com/macros/s/AKfycbyTjfUWWNS-_iV4bI2jSJfwTbAD9jn7z3ni3EKA19YSyWzWk01XNaja1IovAY9QWGw5/exec';         // URL Web App ของ Apps Script ของ OA นี้ (ลงท้าย /exec)
 /* ===================================================== */
+window.addEventListener('error', function (e) { try { dbg('JS error: ' + e.message); } catch (_) {} });
+window.addEventListener('unhandledrejection', function (e) { try { dbg('Promise error: ' + (e.reason && e.reason.message || e.reason)); } catch (_) {} });
 const MAX_ACCURACY_M = 100;
 const MAX_FIX_AGE_MS = 30000;
 
@@ -222,8 +224,8 @@ async function main() {
   $('app').classList.remove('hidden');
   renderProfile(); renderStatus();
   try { initMap(); } catch (e) { dbg('map error: ' + e.message); }
-  startGeo();
-  dbgPermission();
+  dbg('v1126c'); dbgPermission();
+  try { startGeo(); } catch (e) { dbg('startGeo error: ' + e.name + ' ' + e.message); }
 
   $('btnIn').onclick = () => submit('checkin');
   $('btnOut').onclick = () => submit('checkout');
@@ -364,7 +366,7 @@ function dbg(t) {
   if (!el) {
     el = document.createElement('div'); el.id = 'dbg';
     el.style.cssText = 'font-size:11px;color:#888;margin-top:6px;word-break:break-all';
-    $('geoDetail').insertAdjacentElement('afterend', el);
+    if ($('geoDetail')) $('geoDetail').insertAdjacentElement('afterend', el); else document.body.appendChild(el);
   }
   el.textContent += (el.textContent ? ' | ' : '') + t;
 }
