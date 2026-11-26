@@ -363,6 +363,7 @@ function tickClock() {
 
 /* ---------- Map & GPS ---------- */
 function dbg(t) {
+  if (!/debug=1/.test(location.href)) return;   // แสดงบรรทัดตรวจสอบเฉพาะเมื่อเปิดด้วย ?debug=1
   let el = $('dbg');
   if (!el) {
     el = document.createElement('div'); el.id = 'dbg';
